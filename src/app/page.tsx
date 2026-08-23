@@ -14,7 +14,12 @@ import { RestaurantQrPoster } from '@/components/qr/RestaurantQrPoster';
 import { saveClientToSupabase, fetchClientProfile } from '@/lib/supabase/clientServices';
 import { awardScanPoints, fetchClientTransactions } from '@/lib/supabase/pointsService';
 import { fetchRestaurantById } from '@/lib/supabase/restaurantService';
-import { ClientProfile, ActivityTransaction, RestaurantInfo } from '@/types/client';
+import {
+  fetchRestaurantRewards,
+  fetchClaimedRewardIds,
+  claimReward,
+} from '@/lib/supabase/rewardsService';
+import { ClientProfile, ActivityTransaction, RestaurantInfo, RewardItem } from '@/types/client';
 import {
   MOCK_RESTAURANT,
   MOCK_CLIENT,
@@ -33,37 +38,59 @@ function NexaAppContent() {
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [isPosterOpen, setIsPosterOpen] = useState(false);
   const [clientProfile, setClientProfile] = useState<ClientProfile>(MOCK_CLIENT);
+  const [rewards, setRewards] = useState<RewardItem[]>(MOCK_REWARDS);
+  const [claimedRewardIds, setClaimedRewardIds] = useState<string[]>([]);
   const [activities, setActivities] = useState<ActivityTransaction[]>(MOCK_ACTIVITIES);
   const [scanFeedback, setScanFeedback] = useState<{ text: string; isError: boolean } | null>(null);
   const [isScanLoading, setIsScanLoading] = useState(false);
+  const [claimToast, setClaimToast] = useState<{ text: string; isError: boolean } | null>(null);
 
-  // Initialisation instantanée dès le montage du composant
+  // Initialisation réactive du restaurant, profil et récompenses
   useEffect(() => {
     let isMounted = true;
 
     async function init() {
-      // 1. Charger le restaurant s'il est spécifié dans l'URL
+      let currentRest = MOCK_RESTAURANT;
+
       if (restaurantParam) {
         try {
-          const rest = await fetchRestaurantById(restaurantParam);
-          if (isMounted) setActiveRestaurant(rest);
-        } catch {
-          // Ignorer et utiliser MOCK_RESTAURANT
-        }
+          currentRest = await fetchRestaurantById(restaurantParam);
+          if (isMounted) setActiveRestaurant(currentRest);
+        } catch {}
       }
 
-      // 2. Charger le profil client local
+      // Charger le catalogue de récompenses Supabase pour ce restaurant
+      try {
+        const remoteRewards = await fetchRestaurantRewards(currentRest.id);
+        if (isMounted && remoteRewards.length > 0) setRewards(remoteRewards);
+      } catch {}
+
+      // Charger le profil client
       try {
         const savedRaw = localStorage.getItem('nexa_client_profile');
         if (savedRaw) {
           const parsed = JSON.parse(savedRaw) as ClientProfile;
           if (isMounted) setClientProfile(parsed);
+
+          // Si profil distant, charger données + transactions + récompenses utilisées
+          if (parsed.id && !parsed.id.startsWith('local_')) {
+            const remoteProfile = await fetchClientProfile(parsed.id);
+            if (remoteProfile && isMounted) setClientProfile(remoteProfile);
+
+            const remoteTxs = await fetchClientTransactions(parsed.id, currentRest.id);
+            if (remoteTxs && remoteTxs.length > 0 && isMounted) setActivities(remoteTxs);
+
+            const remoteClaimed = await fetchClaimedRewardIds(parsed.id, currentRest.id);
+            if (remoteClaimed && isMounted) setClaimedRewardIds(remoteClaimed);
+          } else {
+            const localClaimed = await fetchClaimedRewardIds(parsed.id, currentRest.id);
+            if (localClaimed && isMounted) setClaimedRewardIds(localClaimed);
+          }
         } else {
-          // Afficher modale d'inscription si aucun profil
           if (isMounted) setIsOnboardingOpen(true);
         }
       } catch (err) {
-        console.warn('Erreur lecture profil local:', err);
+        console.warn('Erreur initialisation client/récompenses:', err);
       }
     }
 
@@ -82,7 +109,7 @@ function NexaAppContent() {
     setIsOnboardingOpen(false);
   };
 
-  // Traitement manuel du scan
+  // Traitement du scan QR pour l'attribution des points
   const handleProcessScan = async () => {
     setIsScanLoading(true);
     setScanFeedback(null);
@@ -118,7 +145,48 @@ function NexaAppContent() {
     setIsScanLoading(false);
   };
 
-  const nextReward = MOCK_REWARDS.find((r) => r.pointsCost > clientProfile.points) || MOCK_REWARDS[MOCK_REWARDS.length - 1];
+  // Traitement sécurisé de l'échange de Récompense (Étape 8)
+  const handleClaimReward = async (reward: RewardItem) => {
+    setIsScanLoading(true);
+    setClaimToast(null);
+
+    const result = await claimReward(clientProfile.id, reward, activeRestaurant.id);
+
+    if (result.success) {
+      const newTotal = result.newPointsBalance ?? Math.max(0, clientProfile.points - reward.pointsCost);
+      const updatedProfile = { ...clientProfile, points: newTotal };
+
+      setClientProfile(updatedProfile);
+      localStorage.setItem('nexa_client_profile', JSON.stringify(updatedProfile));
+
+      // Marquer la récompense comme utilisée
+      setClaimedRewardIds((prev) => [...prev, reward.id, reward.title]);
+
+      // Ajouter à l'historique des activités
+      const claimTx: ActivityTransaction = {
+        id: `claim_${Date.now()}`,
+        type: 'claim',
+        title: `Récompense débloquée: ${reward.title}`,
+        points: -reward.pointsCost,
+        date: new Date().toLocaleString('fr-FR', {
+          day: '2-digit',
+          month: '2-digit',
+          year: 'numeric',
+          hour: '2-digit',
+          minute: '2-digit',
+        }),
+      };
+      setActivities((prev) => [claimTx, ...prev]);
+
+      setClaimToast({ text: result.message, isError: false });
+    } else {
+      setClaimToast({ text: result.message, isError: true });
+    }
+
+    setIsScanLoading(false);
+  };
+
+  const nextReward = rewards.find((r) => r.pointsCost > clientProfile.points) || rewards[rewards.length - 1];
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 antialiased font-sans flex flex-col">
@@ -131,12 +199,25 @@ function NexaAppContent() {
           onClick={() => setIsPosterOpen(true)}
           className="inline-flex items-center gap-1.5 text-xs text-amber-400 font-bold hover:underline"
         >
-          <span>🖨️ Générer & Imprimer l'Affiche QR Code ({activeRestaurant.name})</span>
+          <span>🖨️ Affiche QR Code ({activeRestaurant.name})</span>
         </button>
       </div>
 
+      {/* Toast Notification Banner for Reward Claims */}
+      {claimToast && (
+        <div
+          className={`mx-4 mt-3 p-3 rounded-xl border text-xs font-semibold text-center transition-all ${
+            claimToast.isError
+              ? 'bg-amber-500/15 border-amber-500/40 text-amber-300'
+              : 'bg-emerald-500/15 border-emerald-500/40 text-emerald-300'
+          }`}
+        >
+          {claimToast.text}
+        </div>
+      )}
+
       {/* Main Content Area */}
-      <main className="flex-1 max-w-md w-full mx-auto p-4 pt-5">
+      <main className="flex-1 max-w-md w-full mx-auto p-4 pt-4">
         {activeTab === 'home' && (
           <TabHome
             client={clientProfile}
@@ -153,7 +234,10 @@ function NexaAppContent() {
         {activeTab === 'rewards' && (
           <TabRewards
             userPoints={clientProfile.points}
-            rewards={MOCK_REWARDS}
+            rewards={rewards}
+            claimedRewardIds={claimedRewardIds}
+            onClaimReward={handleClaimReward}
+            isLoading={isScanLoading}
           />
         )}
 
@@ -207,10 +291,7 @@ export default function Home() {
     <Suspense
       fallback={
         <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 text-center">
-          <div className="flex flex-col items-center gap-2">
-            <div className="w-8 h-8 rounded-lg bg-red-600 animate-bounce flex items-center justify-center text-white font-bold">N</div>
-            <p className="text-xs text-slate-400">Chargement de Nexa Client...</p>
-          </div>
+          <p className="text-xs text-slate-400">Chargement Nexa...</p>
         </div>
       }
     >
