@@ -19,6 +19,10 @@ import {
   fetchClaimedRewardIds,
   claimReward,
 } from '@/lib/supabase/rewardsService';
+import {
+  fetchRestaurantNotifications,
+  ProcessedNotification,
+} from '@/lib/supabase/notificationsService';
 import { ClientProfile, ActivityTransaction, RestaurantInfo, RewardItem } from '@/types/client';
 import {
   MOCK_RESTAURANT,
@@ -40,12 +44,13 @@ function NexaAppContent() {
   const [clientProfile, setClientProfile] = useState<ClientProfile>(MOCK_CLIENT);
   const [rewards, setRewards] = useState<RewardItem[]>(MOCK_REWARDS);
   const [claimedRewardIds, setClaimedRewardIds] = useState<string[]>([]);
+  const [notifications, setNotifications] = useState<ProcessedNotification[]>([]);
   const [activities, setActivities] = useState<ActivityTransaction[]>(MOCK_ACTIVITIES);
   const [scanFeedback, setScanFeedback] = useState<{ text: string; isError: boolean } | null>(null);
   const [isScanLoading, setIsScanLoading] = useState(false);
   const [claimToast, setClaimToast] = useState<{ text: string; isError: boolean } | null>(null);
 
-  // Initialisation réactive du restaurant, profil et récompenses
+  // Initialisation réactive du restaurant, profil, récompenses et notifications Supabase
   useEffect(() => {
     let isMounted = true;
 
@@ -59,10 +64,16 @@ function NexaAppContent() {
         } catch {}
       }
 
-      // Charger le catalogue de récompenses Supabase pour ce restaurant
+      // Charger le catalogue de récompenses Supabase
       try {
         const remoteRewards = await fetchRestaurantRewards(currentRest.id);
         if (isMounted && remoteRewards.length > 0) setRewards(remoteRewards);
+      } catch {}
+
+      // Charger les notifications & offres Supabase du restaurant
+      try {
+        const remoteNotifs = await fetchRestaurantNotifications(currentRest.id);
+        if (isMounted && remoteNotifs.length > 0) setNotifications(remoteNotifs);
       } catch {}
 
       // Charger le profil client
@@ -72,7 +83,6 @@ function NexaAppContent() {
           const parsed = JSON.parse(savedRaw) as ClientProfile;
           if (isMounted) setClientProfile(parsed);
 
-          // Si profil distant, charger données + transactions + récompenses utilisées
           if (parsed.id && !parsed.id.startsWith('local_')) {
             const remoteProfile = await fetchClientProfile(parsed.id);
             if (remoteProfile && isMounted) setClientProfile(remoteProfile);
@@ -145,7 +155,7 @@ function NexaAppContent() {
     setIsScanLoading(false);
   };
 
-  // Traitement sécurisé de l'échange de Récompense (Étape 8)
+  // Traitement sécurisé de l'échange de Récompense
   const handleClaimReward = async (reward: RewardItem) => {
     setIsScanLoading(true);
     setClaimToast(null);
@@ -159,10 +169,8 @@ function NexaAppContent() {
       setClientProfile(updatedProfile);
       localStorage.setItem('nexa_client_profile', JSON.stringify(updatedProfile));
 
-      // Marquer la récompense comme utilisée
       setClaimedRewardIds((prev) => [...prev, reward.id, reward.title]);
 
-      // Ajouter à l'historique des activités
       const claimTx: ActivityTransaction = {
         id: `claim_${Date.now()}`,
         type: 'claim',
@@ -187,6 +195,7 @@ function NexaAppContent() {
   };
 
   const nextReward = rewards.find((r) => r.pointsCost > clientProfile.points) || rewards[rewards.length - 1];
+  const activeNotifsCount = notifications.filter((n) => !n.isExpired).length;
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 antialiased font-sans flex flex-col">
@@ -242,7 +251,7 @@ function NexaAppContent() {
         )}
 
         {activeTab === 'notifications' && (
-          <TabNotifications notifications={MOCK_NOTIFICATIONS} />
+          <TabNotifications notifications={notifications} />
         )}
 
         {activeTab === 'profile' && (
@@ -257,7 +266,7 @@ function NexaAppContent() {
       <BottomNav
         activeTab={activeTab}
         onTabChange={(tab) => setActiveTab(tab)}
-        unreadNotifsCount={MOCK_NOTIFICATIONS.length}
+        unreadNotifsCount={activeNotifsCount}
       />
 
       {/* QR Scanner Modal */}
