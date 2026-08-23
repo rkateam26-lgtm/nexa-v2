@@ -34,72 +34,45 @@ function NexaAppContent() {
   const [isPosterOpen, setIsPosterOpen] = useState(false);
   const [clientProfile, setClientProfile] = useState<ClientProfile>(MOCK_CLIENT);
   const [activities, setActivities] = useState<ActivityTransaction[]>(MOCK_ACTIVITIES);
-  const [isInitialized, setIsInitialized] = useState(false);
   const [scanFeedback, setScanFeedback] = useState<{ text: string; isError: boolean } | null>(null);
   const [isScanLoading, setIsScanLoading] = useState(false);
 
-  // 1. Détection automatique du Restaurant par l'URL du QR Code (?r=)
+  // Initialisation instantanée dès le montage du composant
   useEffect(() => {
-    async function initRestaurantAndProfile() {
-      try {
-        let currentRestaurant = MOCK_RESTAURANT;
+    let isMounted = true;
 
-        if (restaurantParam) {
-          currentRestaurant = await fetchRestaurantById(restaurantParam);
-          setActiveRestaurant(currentRestaurant);
+    async function init() {
+      // 1. Charger le restaurant s'il est spécifié dans l'URL
+      if (restaurantParam) {
+        try {
+          const rest = await fetchRestaurantById(restaurantParam);
+          if (isMounted) setActiveRestaurant(rest);
+        } catch {
+          // Ignorer et utiliser MOCK_RESTAURANT
         }
+      }
 
-        // 2. Charger le profil client sauvegardé
+      // 2. Charger le profil client local
+      try {
         const savedRaw = localStorage.getItem('nexa_client_profile');
         if (savedRaw) {
           const parsed = JSON.parse(savedRaw) as ClientProfile;
-          setClientProfile(parsed);
-
-          if (parsed.id && !parsed.id.startsWith('local_')) {
-            const remoteProfile = await fetchClientProfile(parsed.id);
-            if (remoteProfile) {
-              setClientProfile(remoteProfile);
-              localStorage.setItem('nexa_client_profile', JSON.stringify(remoteProfile));
-            }
-
-            const remoteTransactions = await fetchClientTransactions(parsed.id, currentRestaurant.id);
-            if (remoteTransactions && remoteTransactions.length > 0) {
-              setActivities(remoteTransactions);
-            }
-          }
-
-          // Si arrivé via un scan QR URL direct, déclencher le contrôle des points (3h cooldown)
-          if (restaurantParam) {
-            handleAutoScanOnQrEntry(parsed.id, currentRestaurant.id);
-          }
+          if (isMounted) setClientProfile(parsed);
         } else {
-          // Nouveau client : ouvrir la modale d'enregistrement
-          setIsOnboardingOpen(true);
+          // Afficher modale d'inscription si aucun profil
+          if (isMounted) setIsOnboardingOpen(true);
         }
       } catch (err) {
-        console.warn('Erreur initialisation QR restaurant:', err);
-      } finally {
-        setIsInitialized(true);
+        console.warn('Erreur lecture profil local:', err);
       }
     }
 
-    initRestaurantAndProfile();
+    init();
+
+    return () => {
+      isMounted = false;
+    };
   }, [restaurantParam]);
-
-  // Exécution automatique du scan à l'ouverture du lien QR
-  const handleAutoScanOnQrEntry = async (clientId: string, restaurantId: string) => {
-    const result = await awardScanPoints(clientId, restaurantId);
-
-    if (result.success && result.pointsAwarded) {
-      setClientProfile((prev) => ({
-        ...prev,
-        points: result.newTotalPoints ?? (prev.points + result.pointsAwarded!),
-      }));
-      setScanFeedback({ text: result.message, isError: false });
-    } else {
-      setScanFeedback({ text: result.message, isError: true });
-    }
-  };
 
   // Enregistrement de profil client
   const handleCreateProfile = async (name: string, whatsappNumber: string) => {
@@ -107,12 +80,9 @@ function NexaAppContent() {
     setClientProfile(profile);
     localStorage.setItem('nexa_client_profile', JSON.stringify(profile));
     setIsOnboardingOpen(false);
-
-    // Déclencher directement l'attribution des points de premier scan
-    handleAutoScanOnQrEntry(profile.id, activeRestaurant.id);
   };
 
-  // Scan manuel via l'interface
+  // Traitement manuel du scan
   const handleProcessScan = async () => {
     setIsScanLoading(true);
     setScanFeedback(null);
@@ -140,7 +110,6 @@ function NexaAppContent() {
         }),
       };
       setActivities((prev) => [newTx, ...prev]);
-
       setScanFeedback({ text: result.message, isError: false });
     } else {
       setScanFeedback({ text: result.message, isError: true });
@@ -150,19 +119,6 @@ function NexaAppContent() {
   };
 
   const nextReward = MOCK_REWARDS.find((r) => r.pointsCost > clientProfile.points) || MOCK_REWARDS[MOCK_REWARDS.length - 1];
-
-  if (!isInitialized) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-        <div className="flex flex-col items-center gap-3">
-          <div className="w-10 h-10 rounded-xl bg-red-600 animate-pulse flex items-center justify-center text-white font-extrabold text-lg">
-            N
-          </div>
-          <p className="text-xs text-slate-400 font-medium">Reconnaissance du Restaurant Nexa...</p>
-        </div>
-      </div>
-    );
-  }
 
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 antialiased font-sans flex flex-col">
@@ -175,7 +131,7 @@ function NexaAppContent() {
           onClick={() => setIsPosterOpen(true)}
           className="inline-flex items-center gap-1.5 text-xs text-amber-400 font-bold hover:underline"
         >
-          <span>🖨️ Générer & Imprimer l'Affiche QR Code de ce restaurant ({activeRestaurant.name})</span>
+          <span>🖨️ Générer & Imprimer l'Affiche QR Code ({activeRestaurant.name})</span>
         </button>
       </div>
 
@@ -250,8 +206,11 @@ export default function Home() {
   return (
     <Suspense
       fallback={
-        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
-          <p className="text-xs text-slate-400">Chargement Nexa QR...</p>
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center p-4 text-center">
+          <div className="flex flex-col items-center gap-2">
+            <div className="w-8 h-8 rounded-lg bg-red-600 animate-bounce flex items-center justify-center text-white font-bold">N</div>
+            <p className="text-xs text-slate-400">Chargement de Nexa Client...</p>
+          </div>
         </div>
       }
     >
