@@ -12,7 +12,8 @@ import { ScanModal } from '@/components/client/ScanModal';
 import { OnboardingModal } from '@/components/client/OnboardingModal';
 import { RestaurantQrPoster } from '@/components/qr/RestaurantQrPoster';
 import { saveClientToSupabase, fetchClientProfile } from '@/lib/supabase/clientServices';
-import { awardScanPoints, fetchClientTransactions } from '@/lib/supabase/pointsService';
+import { awardScanPoints } from '@/lib/supabase/pointsService';
+import { fetchClientHistory } from '@/lib/supabase/historyService';
 import { fetchRestaurantById } from '@/lib/supabase/restaurantService';
 import {
   fetchRestaurantRewards,
@@ -50,7 +51,7 @@ function NexaAppContent() {
   const [isScanLoading, setIsScanLoading] = useState(false);
   const [claimToast, setClaimToast] = useState<{ text: string; isError: boolean } | null>(null);
 
-  // Initialisation réactive du restaurant, profil, récompenses et notifications Supabase
+  // Initialisation réactive du restaurant, profil, récompenses et historique Supabase
   useEffect(() => {
     let isMounted = true;
 
@@ -70,13 +71,13 @@ function NexaAppContent() {
         if (isMounted && remoteRewards.length > 0) setRewards(remoteRewards);
       } catch {}
 
-      // Charger les notifications & offres Supabase du restaurant
+      // Charger les notifications Supabase
       try {
         const remoteNotifs = await fetchRestaurantNotifications(currentRest.id);
         if (isMounted && remoteNotifs.length > 0) setNotifications(remoteNotifs);
       } catch {}
 
-      // Charger le profil client
+      // Charger le profil client et son historique réel
       try {
         const savedRaw = localStorage.getItem('nexa_client_profile');
         if (savedRaw) {
@@ -87,8 +88,9 @@ function NexaAppContent() {
             const remoteProfile = await fetchClientProfile(parsed.id);
             if (remoteProfile && isMounted) setClientProfile(remoteProfile);
 
-            const remoteTxs = await fetchClientTransactions(parsed.id, currentRest.id);
-            if (remoteTxs && remoteTxs.length > 0 && isMounted) setActivities(remoteTxs);
+            // Charger l'historique réel depuis Supabase
+            const remoteHistory = await fetchClientHistory(parsed.id, currentRest.id);
+            if (isMounted) setActivities(remoteHistory);
 
             const remoteClaimed = await fetchClaimedRewardIds(parsed.id, currentRest.id);
             if (remoteClaimed && isMounted) setClaimedRewardIds(remoteClaimed);
@@ -100,7 +102,7 @@ function NexaAppContent() {
           if (isMounted) setIsOnboardingOpen(true);
         }
       } catch (err) {
-        console.warn('Erreur initialisation client/récompenses:', err);
+        console.warn('Erreur initialisation client/historique:', err);
       }
     }
 
@@ -133,20 +135,27 @@ function NexaAppContent() {
       setClientProfile(updatedProfile);
       localStorage.setItem('nexa_client_profile', JSON.stringify(updatedProfile));
 
-      const newTx: ActivityTransaction = {
-        id: `act_${Date.now()}`,
-        type: 'scan',
-        title: `Scan QR Code Table (+${result.pointsAwarded} pts)`,
-        points: result.pointsAwarded,
-        date: new Date().toLocaleString('fr-FR', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      };
-      setActivities((prev) => [newTx, ...prev]);
+      // Rafraîchir l'historique depuis Supabase
+      const updatedHistory = await fetchClientHistory(clientProfile.id, activeRestaurant.id);
+      if (updatedHistory.length > 0) {
+        setActivities(updatedHistory);
+      } else {
+        const newTx: ActivityTransaction = {
+          id: `act_${Date.now()}`,
+          type: 'scan',
+          title: `Scan QR Code Table (+${result.pointsAwarded} pts)`,
+          points: result.pointsAwarded,
+          date: new Date().toLocaleString('fr-FR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        };
+        setActivities((prev) => [newTx, ...prev]);
+      }
+
       setScanFeedback({ text: result.message, isError: false });
     } else {
       setScanFeedback({ text: result.message, isError: true });
@@ -155,7 +164,7 @@ function NexaAppContent() {
     setIsScanLoading(false);
   };
 
-  // Traitement sécurisé de l'échange de Récompense
+  // Traitement de l'échange de Récompense
   const handleClaimReward = async (reward: RewardItem) => {
     setIsScanLoading(true);
     setClaimToast(null);
@@ -171,20 +180,26 @@ function NexaAppContent() {
 
       setClaimedRewardIds((prev) => [...prev, reward.id, reward.title]);
 
-      const claimTx: ActivityTransaction = {
-        id: `claim_${Date.now()}`,
-        type: 'claim',
-        title: `Récompense débloquée: ${reward.title}`,
-        points: -reward.pointsCost,
-        date: new Date().toLocaleString('fr-FR', {
-          day: '2-digit',
-          month: '2-digit',
-          year: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-        }),
-      };
-      setActivities((prev) => [claimTx, ...prev]);
+      // Rafraîchir l'historique depuis Supabase
+      const updatedHistory = await fetchClientHistory(clientProfile.id, activeRestaurant.id);
+      if (updatedHistory.length > 0) {
+        setActivities(updatedHistory);
+      } else {
+        const claimTx: ActivityTransaction = {
+          id: `claim_${Date.now()}`,
+          type: 'claim',
+          title: `Récompense débloquée: ${reward.title}`,
+          points: -reward.pointsCost,
+          date: new Date().toLocaleString('fr-FR', {
+            day: '2-digit',
+            month: '2-digit',
+            year: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+          }),
+        };
+        setActivities((prev) => [claimTx, ...prev]);
+      }
 
       setClaimToast({ text: result.message, isError: false });
     } else {
@@ -258,6 +273,7 @@ function NexaAppContent() {
           <TabProfile
             client={clientProfile}
             activities={activities}
+            restaurant={activeRestaurant}
           />
         )}
       </main>
