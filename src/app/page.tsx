@@ -10,7 +10,8 @@ import { TabProfile } from '@/components/client/TabProfile';
 import { ScanModal } from '@/components/client/ScanModal';
 import { OnboardingModal } from '@/components/client/OnboardingModal';
 import { saveClientToSupabase, fetchClientProfile } from '@/lib/supabase/clientServices';
-import { ClientProfile } from '@/types/client';
+import { awardScanPoints, fetchClientTransactions } from '@/lib/supabase/pointsService';
+import { ClientProfile, ActivityTransaction } from '@/types/client';
 import {
   MOCK_RESTAURANT,
   MOCK_CLIENT,
@@ -24,10 +25,12 @@ export default function Home() {
   const [isScanOpen, setIsScanOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
   const [clientProfile, setClientProfile] = useState<ClientProfile>(MOCK_CLIENT);
-  const [activities, setActivities] = useState(MOCK_ACTIVITIES);
+  const [activities, setActivities] = useState<ActivityTransaction[]>(MOCK_ACTIVITIES);
   const [isInitialized, setIsInitialized] = useState(false);
+  const [scanFeedback, setScanFeedback] = useState<{ text: string; isError: boolean } | null>(null);
+  const [isScanLoading, setIsScanLoading] = useState(false);
 
-  // Charger le profil client sauvegardé s'il existe
+  // Charger le profil client et ses transactions Supabase
   useEffect(() => {
     async function loadSavedProfile() {
       try {
@@ -36,20 +39,24 @@ export default function Home() {
           const parsed = JSON.parse(savedRaw) as ClientProfile;
           setClientProfile(parsed);
 
-          // Tenter de rafraîchir depuis Supabase si un ID Supabase existe
+          // Si le profil est sauvegardé dans Supabase, récupérer ses données réelles et transactions
           if (parsed.id && !parsed.id.startsWith('local_')) {
             const remoteProfile = await fetchClientProfile(parsed.id);
             if (remoteProfile) {
               setClientProfile(remoteProfile);
               localStorage.setItem('nexa_client_profile', JSON.stringify(remoteProfile));
             }
+
+            const remoteTransactions = await fetchClientTransactions(parsed.id, MOCK_RESTAURANT.id);
+            if (remoteTransactions && remoteTransactions.length > 0) {
+              setActivities(remoteTransactions);
+            }
           }
         } else {
-          // Aucun profil enregistré -> Ouvrir la modale de création
           setIsOnboardingOpen(true);
         }
       } catch (err) {
-        console.warn('Erreur chargement profil client local:', err);
+        console.warn('Erreur chargement profil client:', err);
       } finally {
         setIsInitialized(true);
       }
@@ -58,7 +65,7 @@ export default function Home() {
     loadSavedProfile();
   }, []);
 
-  // Enregistrement du profil dans Supabase & état local
+  // Enregistrement du profil dans Supabase
   const handleCreateProfile = async (name: string, whatsappNumber: string) => {
     const profile = await saveClientToSupabase(name, whatsappNumber, MOCK_RESTAURANT.id);
     setClientProfile(profile);
@@ -66,24 +73,26 @@ export default function Home() {
     setIsOnboardingOpen(false);
   };
 
-  // Next reward target
-  const nextReward = MOCK_REWARDS.find((r) => r.pointsCost > clientProfile.points) || MOCK_REWARDS[MOCK_REWARDS.length - 1];
+  // Traitement réel du scan et validation de la règle des 3 heures
+  const handleProcessScan = async () => {
+    setIsScanLoading(true);
+    setScanFeedback(null);
 
-  // Simuler un scan de points pour la démonstration
-  const handleSimulateScan = () => {
-    const addedPoints = 10;
-    const newPoints = clientProfile.points + addedPoints;
-    const updatedProfile = { ...clientProfile, points: newPoints };
+    const result = await awardScanPoints(clientProfile.id, MOCK_RESTAURANT.id);
 
-    setClientProfile(updatedProfile);
-    localStorage.setItem('nexa_client_profile', JSON.stringify(updatedProfile));
+    if (result.success && result.pointsAwarded) {
+      const newTotal = result.newTotalPoints ?? (clientProfile.points + result.pointsAwarded);
+      const updatedProfile = { ...clientProfile, points: newTotal };
 
-    setActivities((prev) => [
-      {
+      setClientProfile(updatedProfile);
+      localStorage.setItem('nexa_client_profile', JSON.stringify(updatedProfile));
+
+      // Ajouter à l'historique
+      const newTx: ActivityTransaction = {
         id: `act_${Date.now()}`,
         type: 'scan',
-        title: 'Scan QR Code Table (Simulé)',
-        points: +addedPoints,
+        title: `Scan QR Code Table (+${result.pointsAwarded} pts)`,
+        points: result.pointsAwarded,
         date: new Date().toLocaleString('fr-FR', {
           day: '2-digit',
           month: '2-digit',
@@ -91,10 +100,20 @@ export default function Home() {
           hour: '2-digit',
           minute: '2-digit',
         }),
-      },
-      ...prev,
-    ]);
+      };
+      setActivities((prev) => [newTx, ...prev]);
+
+      setScanFeedback({ text: result.message, isError: false });
+    } else {
+      // Refus Cooldown (moins de 3h)
+      setScanFeedback({ text: result.message, isError: true });
+    }
+
+    setIsScanLoading(false);
   };
+
+  // Next reward target
+  const nextReward = MOCK_REWARDS.find((r) => r.pointsCost > clientProfile.points) || MOCK_REWARDS[MOCK_REWARDS.length - 1];
 
   if (!isInitialized) {
     return (
@@ -103,7 +122,7 @@ export default function Home() {
           <div className="w-10 h-10 rounded-xl bg-red-600 animate-pulse flex items-center justify-center text-white font-extrabold text-lg">
             N
           </div>
-          <p className="text-xs text-slate-400 font-medium">Chargement de Nexa V1...</p>
+          <p className="text-xs text-slate-400 font-medium">Chargement du Système de Points Nexa...</p>
         </div>
       </div>
     );
@@ -121,7 +140,10 @@ export default function Home() {
             client={clientProfile}
             nextReward={nextReward}
             restaurant={MOCK_RESTAURANT}
-            onOpenScan={() => setIsScanOpen(true)}
+            onOpenScan={() => {
+              setScanFeedback(null);
+              setIsScanOpen(true);
+            }}
             onGoToRewards={() => setActiveTab('rewards')}
           />
         )}
@@ -152,11 +174,13 @@ export default function Home() {
         unreadNotifsCount={MOCK_NOTIFICATIONS.length}
       />
 
-      {/* Mock QR Scanner Modal */}
+      {/* QR Scanner Modal with Cooldown 3h validation */}
       <ScanModal
         isOpen={isScanOpen}
         onClose={() => setIsScanOpen(false)}
-        onSimulateScan={handleSimulateScan}
+        onSimulateScan={handleProcessScan}
+        messageFeedback={scanFeedback}
+        isLoading={isScanLoading}
       />
 
       {/* Onboarding Profile Creation Modal */}
