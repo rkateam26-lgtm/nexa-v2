@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Nexa V1 — Aperçu Client Interactive (Mobile-First)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
+    body { font-family: 'Plus Jakarta Sans', sans-serif; }
+    .animate-fadeIn { animation: fadeIn 0.25s ease-out; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+  </style>
+</head>
+<body class="bg-slate-950 text-slate-100 min-h-screen antialiased flex flex-col justify-between">
+
+  <div>
+    <!-- Top Restaurant Header -->
+    <header class="sticky top-0 z-40 bg-slate-950/90 backdrop-blur-md border-b border-slate-800 px-4 py-3 shadow-md">
+      <div class="max-w-md mx-auto flex items-center justify-between gap-3">
+        <div class="flex items-center gap-3">
+          <div class="flex items-center gap-1.5">
+            <div class="w-8 h-8 rounded-lg bg-gradient-to-br from-red-500 to-amber-500 flex items-center justify-center font-extrabold text-white text-sm shadow-md shadow-red-500/20">
+              N
+            </div>
+            <span className="font-extrabold tracking-wider text-white text-base">NEXA</span>
+          </div>
+          <div class="h-5 w-px bg-slate-800"></div>
+          <div class="flex items-center gap-2">
+            <div class="w-8 h-8 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center text-lg">
+              🍗
+            </div>
+            <div>
+              <h1 class="font-bold text-sm text-slate-100 leading-tight">Chitir Chicken</h1>
+              <p class="text-[11px] text-slate-400 font-medium leading-none">Bienvenue chez Chitir Chicken</p>
+            </div>
+          </div>
+        </div>
+        <div class="flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 px-2 py-1 rounded-full">
+          <span class="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+          <span class="text-[10px] font-bold text-emerald-400 uppercase">Actif</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Mobile Content Area -->
+    <main class="max-w-md w-full mx-auto p-4 pt-5 pb-24">
+      
+      <!-- TAB 1: ACCUEIL -->
+      <div id="tab-home" class="space-y-5 animate-fadeIn">
+        <div class="relative overflow-hidden rounded-2xl bg-gradient-to-br from-slate-900 via-slate-900 to-slate-950 p-6 border border-slate-800 shadow-xl">
+          <div class="flex items-center justify-between mb-4">
+            <div>
+              <span class="text-xs font-semibold uppercase tracking-wider text-slate-400">Espace Client Fidélité</span>
+              <h2 class="text-xl font-extrabold text-white" id="client-greeting">Bonjour, Alexandre Dupont 👋</h2>
+            </div>
+            <span class="inline-flex items-center gap-1 rounded-full bg-amber-500/15 px-3 py-1 text-xs font-bold text-amber-400 border border-amber-500/30">
+              ⭐ <span id="client-badge">Gourmand VIP</span>
+            </span>
+          </div>
+
+          <div class="my-5 text-center py-2 bg-slate-950/50 rounded-xl border border-slate-800/80">
+            <div class="text-4xl font-black text-transparent bg-clip-text bg-gradient-to-r from-white via-amber-200 to-amber-500" id="client-pts">
+              30
+            </div>
+            <div class="text-xs font-bold tracking-widest text-slate-400 uppercase mt-1">Points Cumulés</div>
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex justify-between text-xs text-slate-300 font-medium">
+              <span>Prochain objectif: <strong class="text-amber-400">Burger Signature</strong></span>
+              <span class="font-mono text-amber-400" id="gauge-txt">30 / 180 pts</span>
+            </div>
+            <div class="h-3 w-full rounded-full bg-slate-800 p-0.5 overflow-hidden">
+              <div id="gauge-bar" class="h-full rounded-full bg-gradient-to-r from-red-500 via-amber-500 to-amber-400 transition-all duration-500" style="width: 17%;"></div>
+            </div>
+          </div>
+        </div>
+
+        <button onclick="openScanModal()" class="w-full group relative flex items-center justify-center gap-3 rounded-2xl bg-gradient-to-r from-red-600 to-red-700 p-4 font-bold text-white shadow-lg shadow-red-600/30 hover:from-red-500 hover:to-red-600 active:scale-[0.98] transition-all">
+          <span class="text-2xl">📸</span>
+          <span class="text-base">Scanner un QR Code pour gagner des points</span>
+        </button>
+
+        <div class="rounded-2xl border border-amber-500/30 bg-gradient-to-br from-amber-500/10 via-slate-900 to-slate-900 p-5 shadow-md">
+          <div class="flex items-center justify-between mb-2">
+            <span class="inline-flex items-center gap-1 rounded-md bg-amber-500/20 px-2 py-0.5 text-[11px] font-extrabold uppercase text-amber-400 border border-amber-500/30">
+              🔥 Offre du moment
+            </span>
+            <span class="text-[11px] text-slate-400">Chitir Chicken</span>
+          </div>
+          <h3 class="text-lg font-bold text-white mb-1">Menu Tenders + Boisson à +20 Pts !</h3>
+          <p class="text-xs text-slate-300 leading-relaxed mb-3">
+            Profitez de points doublés sur chaque commande en restaurant aujourd'hui !
+          </p>
+          <button onclick="switchTab('rewards')" class="text-xs font-bold text-amber-400 underline">Voir les récompenses →</button>
+        </div>
+      </div>
+
+      <!-- TAB 2: RÉCOMPENSES -->
+      <div id="tab-rewards" class="space-y-4 hidden animate-fadeIn">
+        <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-800 flex justify-between items-center">
+          <div>
+            <h2 class="text-lg font-extrabold text-white">🎁 Catalogue Récompenses</h2>
+            <p class="text-xs text-slate-400">Échangez vos points cumulés contre des cadeaux</p>
+          </div>
+          <span class="text-lg font-black text-amber-400" id="rewards-solde">30 pts</span>
+        </div>
+
+        <div class="space-y-3">
+          <div class="rounded-2xl p-4 border bg-slate-900 border-slate-800 opacity-90 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-2xl">🥤</div>
+              <div>
+                <h3 class="font-bold text-sm text-white">Boisson 33cl au choix</h3>
+                <p class="text-xs text-slate-400">Coca, Sprite, Fanta ou Eau</p>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-sm font-black text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20">50 PTS</span>
+              <div class="mt-1 text-[11px] text-slate-400">🔒 Verrouillé</div>
+            </div>
+          </div>
+
+          <div class="rounded-2xl p-4 border bg-slate-900 border-slate-800 opacity-90 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-2xl">🍗</div>
+              <div>
+                <h3 class="font-bold text-sm text-white">Portion de Tenders (x3)</h3>
+                <p class="text-xs text-slate-400">Tenders croustillants faits maison</p>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-sm font-black text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20">100 PTS</span>
+              <div class="mt-1 text-[11px] text-slate-400">🔒 Verrouillé</div>
+            </div>
+          </div>
+
+          <div class="rounded-2xl p-4 border bg-slate-900 border-slate-800 opacity-90 flex justify-between items-center">
+            <div class="flex items-center gap-3">
+              <div class="w-12 h-12 rounded-xl bg-amber-500/15 border border-amber-500/30 flex items-center justify-center text-2xl">🍔</div>
+              <div>
+                <h3 class="font-bold text-sm text-white">Burger Chitir Original Offert</h3>
+                <p class="text-xs text-slate-400">Burger signature avec frites</p>
+              </div>
+            </div>
+            <div class="text-right">
+              <span class="text-sm font-black text-amber-400 bg-amber-500/10 px-2.5 py-1 rounded-lg border border-amber-500/20">180 PTS</span>
+              <div class="mt-1 text-[11px] text-slate-400">🔒 Verrouillé</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 3: NOTIFICATIONS -->
+      <div id="tab-notifications" class="space-y-4 hidden animate-fadeIn">
+        <div class="bg-slate-900/80 p-4 rounded-2xl border border-slate-800">
+          <h2 class="text-lg font-extrabold text-white">🔔 Offres & Notifications</h2>
+          <p class="text-xs text-slate-400">Offres flash & annonces du restaurant</p>
+        </div>
+
+        <div class="space-y-3">
+          <div class="rounded-2xl p-4 border bg-slate-900 border-red-500/40">
+            <div class="flex justify-between items-center mb-1">
+              <h3 class="font-bold text-sm text-white">⚡ 🔥 Happy Hour Tenders</h3>
+              <span class="text-[10px] font-extrabold bg-red-600/20 text-red-400 px-2 py-0.5 rounded-full border border-red-500/30">Flash</span>
+            </div>
+            <p class="text-xs text-slate-300 mb-3">Doublez vos points de fidélité pour toute commande de Tenders entre 18h et 20h !</p>
+            <div class="flex justify-between text-[11px] pt-2 border-t border-slate-800 text-slate-400">
+              <span>Publié le: 23 août 2026</span>
+              <span class="font-bold text-amber-400">⏳ Expire le 31 août 2026</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- TAB 4: PROFIL -->
+      <div id="tab-profile" class="space-y-5 hidden animate-fadeIn">
+        <div class="rounded-2xl bg-slate-900 p-5 border border-slate-800 text-center">
+          <div class="w-20 h-20 rounded-full bg-gradient-to-tr from-red-600 to-amber-500 mx-auto flex items-center justify-center text-3xl mb-3">👤</div>
+          <h2 class="text-lg font-extrabold text-white" id="profile-name">Alexandre Dupont</h2>
+          <p class="text-xs text-amber-400 font-semibold mt-0.5" id="profile-whatsapp">💬 WhatsApp : +33 6 12 34 56 78</p>
+          <div class="mt-4 inline-flex items-center gap-3 bg-slate-950 px-4 py-2 rounded-xl border border-slate-800">
+            <div class="text-left">
+              <span class="text-[10px] text-slate-400 uppercase font-bold block">Solde Actuel</span>
+              <span class="text-base font-black text-white" id="profile-pts-val">30 Points</span>
+            </div>
+            <div class="h-6 w-px bg-slate-800"></div>
+            <div class="text-left">
+              <span class="text-[10px] text-slate-400 uppercase font-bold block">Statut Client</span>
+              <span class="text-xs font-bold text-amber-400">Gourmand VIP</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="rounded-2xl bg-slate-900 p-4 border border-slate-800">
+          <h3 class="font-extrabold text-sm text-white mb-3">📜 Historique des activités</h3>
+          <div class="space-y-2" id="history-container">
+            <div class="flex justify-between items-center p-2.5 rounded-xl bg-slate-950/60 border border-slate-800 text-xs">
+              <div>
+                <div class="font-bold text-slate-200">Scan QR Code Table (+20 pts)</div>
+                <div class="text-[10px] text-slate-400">Aujourd'hui</div>
+              </div>
+              <span class="font-mono font-extrabold text-xs px-2 py-0.5 rounded text-emerald-400 bg-emerald-500/10">+20 pts</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </main>
+
+    <!-- Bottom Nav 4 Tabs -->
+    <nav class="fixed bottom-0 left-0 right-0 z-40 bg-slate-950/95 backdrop-blur-lg border-t border-slate-800 py-2 px-4 shadow-lg">
+      <div class="max-w-md mx-auto grid grid-cols-4 gap-1">
+        <button id="nav-home" onclick="switchTab('home')" class="flex flex-col items-center py-1.5 rounded-xl text-red-500 font-bold bg-red-600/15">
+          <span class="text-xl">🏠</span>
+          <span class="text-[11px]">Accueil</span>
+        </button>
+        <button id="nav-rewards" onclick="switchTab('rewards')" class="flex flex-col items-center py-1.5 rounded-xl text-slate-400">
+          <span class="text-xl">🎁</span>
+          <span class="text-[11px]">Récompenses</span>
+        </button>
+        <button id="nav-notifications" onclick="switchTab('notifications')" class="flex flex-col items-center py-1.5 rounded-xl text-slate-400 relative">
+          <span class="text-xl">🔔</span>
+          <span class="text-[11px]">Notifications</span>
+          <span class="absolute top-1 right-3 flex h-4 w-4 items-center justify-center rounded-full bg-red-600 text-[9px] font-bold text-white">1</span>
+        </button>
+        <button id="nav-profile" onclick="switchTab('profile')" class="flex flex-col items-center py-1.5 rounded-xl text-slate-400">
+          <span class="text-xl">👤</span>
+          <span class="text-[11px]">Profil</span>
+        </button>
+      </div>
+    </nav>
+  </div>
+
+  <!-- Scan QR Modal -->
+  <div id="scan-modal" class="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/80 backdrop-blur-md p-4 hidden">
+    <div class="w-full max-w-sm rounded-3xl bg-slate-900 border border-slate-800 p-6 shadow-2xl text-center relative">
+      <button onclick="closeScanModal()" class="absolute top-4 right-4 text-slate-400 p-1 rounded-full bg-slate-800 w-8 h-8">✕</button>
+      <div class="my-4 inline-flex items-center justify-center w-24 h-24 rounded-2xl border-2 dashed border-red-500 bg-red-500/10 text-4xl">📸</div>
+      <h3 class="text-lg font-extrabold text-white mb-1">Scanner un QR Code</h3>
+      <p class="text-xs text-slate-400 mb-4">Pointez votre appareil vers le QR code sur votre table (+20 pts par scan, 1 scan toutes les 3h).</p>
+      
+      <div id="scan-feedback" class="hidden mb-4 p-3 rounded-xl border text-xs font-semibold"></div>
+
+      <button onclick="executeScan()" class="w-full py-3.5 px-4 rounded-xl bg-gradient-to-r from-red-600 to-red-700 font-bold text-white shadow-lg text-sm">
+        ✨ Valider le Scan (+20 Points)
+      </button>
+    </div>
+  </div>
+
+  <script>
+    let pts = 30;
+    let lastScanTime = Date.now();
+
+    function switchTab(tabId) {
+      ['home', 'rewards', 'notifications', 'profile'].forEach(id => {
+        document.getElementById('tab-' + id).classList.add('hidden');
+        const nav = document.getElementById('nav-' + id);
+        nav.className = "flex flex-col items-center py-1.5 rounded-xl text-slate-400";
+      });
+      document.getElementById('tab-' + tabId).classList.remove('hidden');
+      const activeNav = document.getElementById('nav-' + tabId);
+      activeNav.className = "flex flex-col items-center py-1.5 rounded-xl text-red-500 font-bold bg-red-600/15";
+    }
+
+    function openScanModal() {
+      document.getElementById('scan-modal').classList.remove('hidden');
+      document.getElementById('scan-feedback').classList.add('hidden');
+    }
+
+    function closeScanModal() {
+      document.getElementById('scan-modal').classList.add('hidden');
+    }
+
+    function executeScan() {
+      const feedback = document.getElementById('scan-feedback');
+      const now = Date.now();
+      const diffMs = now - lastScanTime;
+      const threeHoursMs = 3 * 60 * 60 * 1000;
+
+      feedback.classList.remove('hidden');
+
+      if (diffMs < threeHoursMs && pts > 30) {
+        feedback.className = "mb-4 p-3 rounded-xl border text-xs font-semibold bg-amber-500/15 border-amber-500/40 text-amber-300";
+        feedback.innerHTML = "⏳ Vous avez déjà reçu vos points. Veuillez attendre encore 2h 59min avant votre prochain scan.";
+      } else {
+        pts += 20;
+        lastScanTime = now;
+        document.getElementById('client-pts').innerText = pts;
+        document.getElementById('rewards-solde').innerText = pts + " pts";
+        document.getElementById('profile-pts-val').innerText = pts + " Points";
+        
+        const pct = Math.min(100, Math.round((pts / 180) * 100));
+        document.getElementById('gauge-bar').style.width = pct + "%";
+        document.getElementById('gauge-txt').innerText = pts + " / 180 pts";
+
+        feedback.className = "mb-4 p-3 rounded-xl border text-xs font-semibold bg-emerald-500/15 border-emerald-500/40 text-emerald-300";
+        feedback.innerHTML = "🎉 +20 Points ajoutés avec succès !";
+      }
+    }
+  </script>
+</body>
+</html>

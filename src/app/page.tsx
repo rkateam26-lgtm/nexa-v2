@@ -1,6 +1,7 @@
 'use client';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { Header } from '@/components/layouts/Header';
 import { BottomNav, TabType } from '@/components/layouts/BottomNav';
 import { TabHome } from '@/components/client/TabHome';
@@ -9,9 +10,11 @@ import { TabNotifications } from '@/components/client/TabNotifications';
 import { TabProfile } from '@/components/client/TabProfile';
 import { ScanModal } from '@/components/client/ScanModal';
 import { OnboardingModal } from '@/components/client/OnboardingModal';
+import { RestaurantQrPoster } from '@/components/qr/RestaurantQrPoster';
 import { saveClientToSupabase, fetchClientProfile } from '@/lib/supabase/clientServices';
 import { awardScanPoints, fetchClientTransactions } from '@/lib/supabase/pointsService';
-import { ClientProfile, ActivityTransaction } from '@/types/client';
+import { fetchRestaurantById } from '@/lib/supabase/restaurantService';
+import { ClientProfile, ActivityTransaction, RestaurantInfo } from '@/types/client';
 import {
   MOCK_RESTAURANT,
   MOCK_CLIENT,
@@ -20,26 +23,38 @@ import {
   MOCK_ACTIVITIES,
 } from '@/data/mockData';
 
-export default function Home() {
+function NexaAppContent() {
+  const searchParams = useSearchParams();
+  const restaurantParam = searchParams.get('r') || searchParams.get('restaurant');
+
   const [activeTab, setActiveTab] = useState<TabType>('home');
+  const [activeRestaurant, setActiveRestaurant] = useState<RestaurantInfo>(MOCK_RESTAURANT);
   const [isScanOpen, setIsScanOpen] = useState(false);
   const [isOnboardingOpen, setIsOnboardingOpen] = useState(false);
+  const [isPosterOpen, setIsPosterOpen] = useState(false);
   const [clientProfile, setClientProfile] = useState<ClientProfile>(MOCK_CLIENT);
   const [activities, setActivities] = useState<ActivityTransaction[]>(MOCK_ACTIVITIES);
   const [isInitialized, setIsInitialized] = useState(false);
   const [scanFeedback, setScanFeedback] = useState<{ text: string; isError: boolean } | null>(null);
   const [isScanLoading, setIsScanLoading] = useState(false);
 
-  // Charger le profil client et ses transactions Supabase
+  // 1. Détection automatique du Restaurant par l'URL du QR Code (?r=)
   useEffect(() => {
-    async function loadSavedProfile() {
+    async function initRestaurantAndProfile() {
       try {
+        let currentRestaurant = MOCK_RESTAURANT;
+
+        if (restaurantParam) {
+          currentRestaurant = await fetchRestaurantById(restaurantParam);
+          setActiveRestaurant(currentRestaurant);
+        }
+
+        // 2. Charger le profil client sauvegardé
         const savedRaw = localStorage.getItem('nexa_client_profile');
         if (savedRaw) {
           const parsed = JSON.parse(savedRaw) as ClientProfile;
           setClientProfile(parsed);
 
-          // Si le profil est sauvegardé dans Supabase, récupérer ses données réelles et transactions
           if (parsed.id && !parsed.id.startsWith('local_')) {
             const remoteProfile = await fetchClientProfile(parsed.id);
             if (remoteProfile) {
@@ -47,38 +62,62 @@ export default function Home() {
               localStorage.setItem('nexa_client_profile', JSON.stringify(remoteProfile));
             }
 
-            const remoteTransactions = await fetchClientTransactions(parsed.id, MOCK_RESTAURANT.id);
+            const remoteTransactions = await fetchClientTransactions(parsed.id, currentRestaurant.id);
             if (remoteTransactions && remoteTransactions.length > 0) {
               setActivities(remoteTransactions);
             }
           }
+
+          // Si arrivé via un scan QR URL direct, déclencher le contrôle des points (3h cooldown)
+          if (restaurantParam) {
+            handleAutoScanOnQrEntry(parsed.id, currentRestaurant.id);
+          }
         } else {
+          // Nouveau client : ouvrir la modale d'enregistrement
           setIsOnboardingOpen(true);
         }
       } catch (err) {
-        console.warn('Erreur chargement profil client:', err);
+        console.warn('Erreur initialisation QR restaurant:', err);
       } finally {
         setIsInitialized(true);
       }
     }
 
-    loadSavedProfile();
-  }, []);
+    initRestaurantAndProfile();
+  }, [restaurantParam]);
 
-  // Enregistrement du profil dans Supabase
+  // Exécution automatique du scan à l'ouverture du lien QR
+  const handleAutoScanOnQrEntry = async (clientId: string, restaurantId: string) => {
+    const result = await awardScanPoints(clientId, restaurantId);
+
+    if (result.success && result.pointsAwarded) {
+      setClientProfile((prev) => ({
+        ...prev,
+        points: result.newTotalPoints ?? (prev.points + result.pointsAwarded!),
+      }));
+      setScanFeedback({ text: result.message, isError: false });
+    } else {
+      setScanFeedback({ text: result.message, isError: true });
+    }
+  };
+
+  // Enregistrement de profil client
   const handleCreateProfile = async (name: string, whatsappNumber: string) => {
-    const profile = await saveClientToSupabase(name, whatsappNumber, MOCK_RESTAURANT.id);
+    const profile = await saveClientToSupabase(name, whatsappNumber, activeRestaurant.id);
     setClientProfile(profile);
     localStorage.setItem('nexa_client_profile', JSON.stringify(profile));
     setIsOnboardingOpen(false);
+
+    // Déclencher directement l'attribution des points de premier scan
+    handleAutoScanOnQrEntry(profile.id, activeRestaurant.id);
   };
 
-  // Traitement réel du scan et validation de la règle des 3 heures
+  // Scan manuel via l'interface
   const handleProcessScan = async () => {
     setIsScanLoading(true);
     setScanFeedback(null);
 
-    const result = await awardScanPoints(clientProfile.id, MOCK_RESTAURANT.id);
+    const result = await awardScanPoints(clientProfile.id, activeRestaurant.id);
 
     if (result.success && result.pointsAwarded) {
       const newTotal = result.newTotalPoints ?? (clientProfile.points + result.pointsAwarded);
@@ -87,7 +126,6 @@ export default function Home() {
       setClientProfile(updatedProfile);
       localStorage.setItem('nexa_client_profile', JSON.stringify(updatedProfile));
 
-      // Ajouter à l'historique
       const newTx: ActivityTransaction = {
         id: `act_${Date.now()}`,
         type: 'scan',
@@ -105,14 +143,12 @@ export default function Home() {
 
       setScanFeedback({ text: result.message, isError: false });
     } else {
-      // Refus Cooldown (moins de 3h)
       setScanFeedback({ text: result.message, isError: true });
     }
 
     setIsScanLoading(false);
   };
 
-  // Next reward target
   const nextReward = MOCK_REWARDS.find((r) => r.pointsCost > clientProfile.points) || MOCK_REWARDS[MOCK_REWARDS.length - 1];
 
   if (!isInitialized) {
@@ -122,7 +158,7 @@ export default function Home() {
           <div className="w-10 h-10 rounded-xl bg-red-600 animate-pulse flex items-center justify-center text-white font-extrabold text-lg">
             N
           </div>
-          <p className="text-xs text-slate-400 font-medium">Chargement du Système de Points Nexa...</p>
+          <p className="text-xs text-slate-400 font-medium">Reconnaissance du Restaurant Nexa...</p>
         </div>
       </div>
     );
@@ -131,7 +167,17 @@ export default function Home() {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 antialiased font-sans flex flex-col">
       {/* Restaurant Header */}
-      <Header restaurant={MOCK_RESTAURANT} />
+      <Header restaurant={activeRestaurant} />
+
+      {/* Quick Merchant Bar to Generate / Download QR Poster */}
+      <div className="bg-slate-900/60 border-b border-slate-800 py-1.5 px-4 text-center">
+        <button
+          onClick={() => setIsPosterOpen(true)}
+          className="inline-flex items-center gap-1.5 text-xs text-amber-400 font-bold hover:underline"
+        >
+          <span>🖨️ Générer & Imprimer l'Affiche QR Code de ce restaurant ({activeRestaurant.name})</span>
+        </button>
+      </div>
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-md w-full mx-auto p-4 pt-5">
@@ -139,7 +185,7 @@ export default function Home() {
           <TabHome
             client={clientProfile}
             nextReward={nextReward}
-            restaurant={MOCK_RESTAURANT}
+            restaurant={activeRestaurant}
             onOpenScan={() => {
               setScanFeedback(null);
               setIsScanOpen(true);
@@ -174,7 +220,7 @@ export default function Home() {
         unreadNotifsCount={MOCK_NOTIFICATIONS.length}
       />
 
-      {/* QR Scanner Modal with Cooldown 3h validation */}
+      {/* QR Scanner Modal */}
       <ScanModal
         isOpen={isScanOpen}
         onClose={() => setIsScanOpen(false)}
@@ -186,9 +232,30 @@ export default function Home() {
       {/* Onboarding Profile Creation Modal */}
       <OnboardingModal
         isOpen={isOnboardingOpen}
-        restaurant={MOCK_RESTAURANT}
+        restaurant={activeRestaurant}
         onSubmit={handleCreateProfile}
       />
+
+      {/* Printable QR Code Poster Generator Modal */}
+      <RestaurantQrPoster
+        isOpen={isPosterOpen}
+        restaurant={activeRestaurant}
+        onClose={() => setIsPosterOpen(false)}
+      />
     </div>
+  );
+}
+
+export default function Home() {
+  return (
+    <Suspense
+      fallback={
+        <div className="min-h-screen bg-slate-950 text-slate-100 flex items-center justify-center">
+          <p className="text-xs text-slate-400">Chargement Nexa QR...</p>
+        </div>
+      }
+    >
+      <NexaAppContent />
+    </Suspense>
   );
 }
